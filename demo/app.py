@@ -24,25 +24,25 @@ if "manual_setpoint" not in st.session_state:
     st.session_state.actuator_trace = []
     st.session_state.save_plots_requested = False
     st.session_state.dp_series = [
-        1.00,
-        1.02,
-        0.98,
-        1.01,
-        0.99,
-        1.03,
-        1.00,
-        0.97,
-        1.02,
-        0.45,
-        0.44,
-        0.45,
-        0.44,
-        0.43,
-        0.44,
-        0.43,
-        0.44,
-        0.43,
-    ] + [0.43] * 50
+        0.61,
+        0.62,
+        0.6,
+        0.61,
+        0.62,
+        0.6,
+        0.61,
+        0.59,
+        0.6,
+        0.2,
+        0.21,
+        0.2,
+        0.19,
+        0.18,
+        0.2,
+        0.21,
+        0.2,
+        0.19,
+    ] + [0.2] * 50
 if "main_x" not in st.session_state:
     st.session_state.main_x = "timestamp"
 if "main_y" not in st.session_state:
