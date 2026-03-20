@@ -21,12 +21,25 @@ Response strategy:
 2. If derivative is outside bounds, immediately force valve setpoint to `0%`.
 3. Keep visual evidence and export data for reporting.
 
+## Main Simulation (`sim.html`)
+
+The main simulation in this repository is [`sim.html`](sim.html).
+
+It is a standalone browser-based simulation for the rack-cooling leakage use case and is the best entry point for understanding the concept quickly.
+
+- Interactive scenario switching for normal operation, tray installation, and leakage / pipe rupture
+- Real-time plots for supply and return pressure (`p1`, `p2`)
+- `dp/dt` visualization for leakage detection
+- Annotated Belimo Energy Valve and server-rack schematic
+- Parameter controls for hydraulic setup, dynamic response, and alarm threshold
+
 ## Repository Structure
 
 ```text
 Belimo-START-Hack-2026/
   Challenge.md
   README.md
+  sim.html
   demo/
     app.py
     main.py
@@ -43,11 +56,17 @@ Belimo-START-Hack-2026/
 
 - Commands are written via `set_process_data(...)` to InfluxDB (`_process`).
 - Telemetry is read via `get_measurement_data(...)` from InfluxDB (`measurements`).
+- `sim.html` provides the main standalone simulation in the browser.
 - In the Streamlit app:
   - Real-time plot is fully selectable (`x` and `y`).
   - Leakage example simulates `∆p` over time.
   - `d∆p/dt` is computed from simulated `∆p`.
   - Out-of-bound derivative triggers emergency close.
+
+## Demo Overview
+
+- `sim.html`: main simulation for the hydraulic model and leakage-detection story
+- `demo/app.py`: Streamlit demo for live actuator telemetry, setpoint control, and CSV export
 
 ## Main Demo Features (`demo/app.py`)
 
@@ -102,6 +121,8 @@ python -m venv .venv
 python -m pip install streamlit pandas altair influxdb-client matplotlib
 streamlit run demo/app.py
 ```
+
+To use the main simulation, open `sim.html` directly in a browser.
 
 ## Run with Docker
 
