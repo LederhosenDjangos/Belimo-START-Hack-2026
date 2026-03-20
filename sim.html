@@ -1,0 +1,827 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Server Rack Kühlung – Leckage-Erkennung via Differenzdruck</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: #eef1f5;
+        color: #333;
+      }
+      header {
+        background: #1a1a2e;
+        color: #eee;
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      header h1 { font-size: 1.15rem; font-weight: 600; }
+      header .subtitle { font-size: 0.85rem; color: #8a8fa8; }
+
+      .container {
+        max-width: 1320px;
+        margin: 16px auto;
+        padding: 0 16px;
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 16px;
+      }
+      .panel {
+        background: white;
+        padding: 16px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      }
+      .panel h2 {
+        font-size: 0.95rem;
+        color: #2c3e50;
+        border-bottom: 2px solid #eef1f5;
+        padding-bottom: 8px;
+        margin-bottom: 12px;
+      }
+      label {
+        display: block;
+        margin-top: 8px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #555;
+      }
+      input[type="number"] {
+        width: 100%;
+        padding: 6px 8px;
+        margin-top: 3px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 0.85rem;
+      }
+      .scenario-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .scenario-btn {
+        padding: 8px 10px;
+        font-size: 0.82rem;
+        border: 2px solid #ccc;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        background: white;
+        color: #333;
+        text-align: left;
+        transition: all .15s;
+      }
+      .scenario-btn:hover { border-color: #888; }
+      .scenario-btn.sel-normal  { border-color: #3498db; background: #ebf5fb; color: #2471a3; }
+      .scenario-btn.sel-add     { border-color: #f39c12; background: #fef5e7; color: #b7770a; }
+      .scenario-btn.sel-leak    { border-color: #e74c3c; background: #fdedec; color: #b03a2e; }
+
+      .sim-controls {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .sim-controls button {
+        flex: 1;
+        padding: 9px;
+        font-size: 0.9rem;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 700;
+        color: white;
+        transition: background .15s;
+      }
+      .btn-start { background: #27ae60; }
+      .btn-start:hover { background: #1e8449; }
+      .btn-stop  { background: #e67e22; }
+      .btn-stop:hover  { background: #ca6f1e; }
+      .btn-reset { background: #7f8c8d; }
+      .btn-reset:hover { background: #616a6b; }
+
+      .time-bar {
+        margin-top: 10px;
+        font-size: 0.82rem;
+        color: #666;
+      }
+      .time-bar .t { font-weight: 700; color: #2c3e50; font-size: 1rem; }
+      .progress-track {
+        width: 100%;
+        height: 6px;
+        background: #ddd;
+        border-radius: 3px;
+        margin-top: 4px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        background: #3498db;
+        width: 0%;
+        border-radius: 3px;
+        transition: width .05s linear;
+      }
+
+      .status-bar {
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.85rem;
+        text-align: center;
+        margin-bottom: 12px;
+        transition: all .2s;
+      }
+      .status-ok   { background: #d5f5e3; color: #1e8449; }
+      .status-warn { background: #fef9e7; color: #b7950b; }
+      .status-alarm {
+        background: #e74c3c;
+        color: white;
+        animation: blink .6s infinite;
+      }
+      @keyframes blink { 50% { opacity: .7; } }
+
+      #schematic-container svg {
+        width: 100%;
+        background: #fafafa;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+      }
+      canvas { max-height: 210px; }
+
+      .tabs { display: flex; gap: 0; margin-bottom: 0; }
+      .tab-btn {
+        flex: 1;
+        padding: 8px 6px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        border: none;
+        background: #e8ecef;
+        color: #666;
+        cursor: pointer;
+        border-radius: 6px 6px 0 0;
+        transition: all .15s;
+      }
+      .tab-btn.active { background: white; color: #2c3e50; box-shadow: 0 -2px 4px rgba(0,0,0,.06); }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+
+      .computed-dp {
+        margin-top: 10px;
+        padding: 8px 10px;
+        background: #fef9e7;
+        border: 1px solid #f0d78c;
+        border-radius: 6px;
+        font-size: 0.82rem;
+        color: #7d6608;
+      }
+      .computed-dp strong { font-size: 0.95rem; }
+
+      .info-section { margin-bottom: 14px; }
+      .info-section h3 {
+        font-size: 0.82rem;
+        color: #2c3e50;
+        margin-bottom: 4px;
+        border-left: 3px solid #3498db;
+        padding-left: 8px;
+      }
+      .info-section p {
+        font-size: 0.78rem;
+        color: #555;
+        line-height: 1.45;
+        margin: 0;
+      }
+      .info-section .formula {
+        font-family: "Courier New", monospace;
+        background: #f4f7f6;
+        padding: 4px 8px;
+        border-radius: 4px;
+        display: inline-block;
+        margin-top: 3px;
+        font-size: 0.78rem;
+        color: #2c3e50;
+      }
+
+      @media (max-width: 900px) {
+        .container { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Server-Rack Kühlung – Leckage-Erkennung</h1>
+      <span class="subtitle">Belimo Energy Valve™ · Differenzdrucksensor · dp/dt Analyse</span>
+    </header>
+
+    <div class="container">
+      <!-- LEFT COLUMN -->
+      <div class="left-col">
+        <div class="tabs">
+          <button class="tab-btn active" onclick="switchTab('params')">Parameter</button>
+          <button class="tab-btn" onclick="switchTab('info')">Erklärung</button>
+        </div>
+        <div class="panel" style="border-radius:0 0 8px 8px">
+
+          <!-- TAB: Parameter -->
+          <div id="tab-params" class="tab-content active">
+            <h2>Hydraulik</h2>
+            <label>p1 Versorgungsdruck (bar)
+              <input type="number" id="inp-p1-sys" step="0.1" value="1.6" oninput="updateComputedDp()">
+            </label>
+            <label>dp Offset – Verrohrung (bar)
+              <input type="number" id="inp-dp-offset" step="0.01" value="0.1" oninput="updateComputedDp()">
+            </label>
+            <label>dp pro Tray (bar)
+              <input type="number" id="inp-dp-per-tray" step="0.01" value="0.05" oninput="updateComputedDp()">
+            </label>
+            <label>Anzahl Trays
+              <input type="number" id="inp-trays" value="10" min="1" max="42" oninput="updateComputedDp(); renderSchematic()">
+            </label>
+
+            <div class="computed-dp" id="computed-dp">
+              dp<sub>Rack</sub> = 0.1 + 0.05 × 10 = <strong>0.600 bar</strong><br>
+              p2 = 1.6 − 0.600 = <strong>1.000 bar</strong>
+            </div>
+
+            <h2 style="margin-top:16px">Leckage-Parameter</h2>
+            <label>p1 bei Leckage (bar)
+              <input type="number" id="inp-p1-leak" step="0.1" value="0.2">
+            </label>
+            <label>p2 bei Leckage (bar)
+              <input type="number" id="inp-p2-leak" step="0.1" value="0.0">
+            </label>
+
+            <h2 style="margin-top:16px">Dynamik &amp; Erkennung</h2>
+            <label>τ Tray-Einbau (s)
+              <input type="number" id="inp-tau-tray" step="0.1" min="0.01" value="1.0">
+            </label>
+            <label>τ Leckage (s)
+              <input type="number" id="inp-tau-leak" step="0.01" min="0.01" value="0.05">
+            </label>
+            <label>Alarm-Schwellenwert |dp/dt| (bar/s)
+              <input type="number" id="inp-alarm-threshold" step="0.5" min="0.1" value="3.0">
+            </label>
+
+            <h2 style="margin-top:16px">Szenario</h2>
+            <div class="scenario-group">
+              <button class="scenario-btn sel-normal" data-scenario="normal" onclick="selectScenario('normal')">
+                1 · Normalbetrieb
+              </button>
+              <button class="scenario-btn" data-scenario="add_tray" onclick="selectScenario('add_tray')">
+                2 · Tray Einbau (t = 3 s)
+              </button>
+              <button class="scenario-btn" data-scenario="leak" onclick="selectScenario('leak')">
+                3 · Leckage / Rohrbruch (t = 3 s)
+              </button>
+            </div>
+
+            <div class="sim-controls">
+              <button id="btn-toggle" class="btn-start" onclick="toggleSim()">▶ Start</button>
+              <button class="btn-reset" onclick="resetSim()">↻ Reset</button>
+            </div>
+
+            <div class="time-bar">
+              Zeit: <span class="t" id="time-display">0.00</span> s / 6.00 s
+              <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+            </div>
+          </div>
+
+          <!-- TAB: Erklärung -->
+          <div id="tab-info" class="tab-content">
+            <h2>Parameterübersicht</h2>
+
+            <div class="info-section">
+              <h3>p1 Versorgungsdruck</h3>
+              <p>Absoluter Druck im Vorlauf (Kaltwasser-Zuleitung), gemessen vor dem Rack-Eintritt. Wird von der Gebäudepumpe bereitgestellt. Typisch 1.0 – 3.0 bar.</p>
+            </div>
+
+            <div class="info-section">
+              <h3>dp Offset – Verrohrung</h3>
+              <p>Fixer Druckabfall durch Leitungen, Bögen, Ventilkörper und Verteiler – unabhängig von der Tray-Anzahl. Entspricht dem hydraulischen Grundwiderstand des Rack-Anschlusses.</p>
+            </div>
+
+            <div class="info-section">
+              <h3>dp pro Tray</h3>
+              <p>Zusätzlicher Druckabfall pro eingebautem Server-Tray. Jeder Tray fügt einen parallelen Wärmetauscher-Zweig hinzu, der den Gesamtwiderstand erhöht (bei konstantem Gesamtdurchfluss).</p>
+              <span class="formula">dp_Rack = dp_Offset + dp_pro_Tray × n</span>
+            </div>
+
+            <div class="info-section">
+              <h3>Anzahl Trays</h3>
+              <p>Anzahl der aktuell eingebauten Server-Trays mit Kühlkreis. Bestimmt den Gesamtdruckabfall und den Gesamtdurchfluss. Jeder Tray hat einen Quick-Disconnect-Anschluss an den VL/RL-Verteiler.</p>
+            </div>
+
+
+            <div class="info-section">
+              <h3>p1 bei Leckage</h3>
+              <p>Druck im Vorlauf nach einem katastrophalen Rohrbruch. Da das Kühlwasser zur Atmosphäre entweicht, fällt p1 auf nahezu 0 bar (Umgebungsdruck). Wert simuliert die verbleibende Pumpenleistung.</p>
+            </div>
+
+            <div class="info-section">
+              <h3>p2 bei Leckage</h3>
+              <p>Druck im Rücklauf nach Leckage. Bei einem offenen Leck ist der Rücklauf drucklos (≈ 0 bar), da das Medium frei ausfließt.</p>
+            </div>
+
+            <h2 style="margin-top:16px">Dynamik &amp; Erkennung</h2>
+
+            <div class="info-section">
+              <h3>τ Tray-Einbau</h3>
+              <p>Zeitkonstante des Druckübergangs beim Einstecken eines Trays. Die Quick-Disconnect-Kupplung öffnet den Querschnitt mechanisch über ~1 s. Bestimmt, wie langsam dp/dt beim Tray-Einbau ansteigt. Typisch 0.5 – 2.0 s.</p>
+            </div>
+
+            <div class="info-section">
+              <h3>τ Leckage</h3>
+              <p>Zeitkonstante der Druckentlastung bei einem Rohrbruch. Ein offener Bruch erzeugt schlagartig einen großen Querschnitt (R<sub>hyd</sub> → 0). Die Entleerung wird nur durch die Trägheit der Wassersäule begrenzt. Typisch 0.03 – 0.08 s. Je kleiner τ, desto höher der dp/dt-Spike.</p>
+            </div>
+
+            <div class="info-section">
+              <h3>Alarm-Schwellenwert |dp/dt|</h3>
+              <p>Schwellenwert zur Unterscheidung Leckage vs. Tray-Einbau. Muss zwischen dem Tray-Peak (≈ dp_per_tray/τ_tray) und dem Leck-Peak (≈ Δp_leak/τ_leak) liegen. Default 3 bar/s bietet Faktor ~6× Sicherheit zum Tray-Signal und Faktor ~3× zum Leck-Signal.</p>
+              <span class="formula">Tray: |dp/dt| ≈ 0.05/1.0 = 0.05 bar/s &lt;&lt; 3</span><br>
+              <span class="formula">Leck: |dp/dt| ≈ 1.4/0.05 = 28 bar/s &gt;&gt; 3</span>
+            </div>
+
+            <h2 style="margin-top:16px">Szenarien</h2>
+
+            <div class="info-section">
+              <h3>1 · Normalbetrieb</h3>
+              <p>Stabiler Betrieb über 10 s. p1 und p2 bleiben konstant mit leichtem Sensorrauschen (±0.01 bar). dp/dt ≈ 0. Baseline zum Vergleich.</p>
+            </div>
+
+            <div class="info-section">
+              <h3>2 · Tray Einbau</h3>
+              <p>Bei t = 3 s wird ein zusätzlicher Tray eingesteckt. Der Druckabfall steigt linear (ein Tray mehr in der dp-Formel). Weicher Übergang (τ = 1 s) durch die Quick-Disconnect-Hydraulik. dp/dt zeigt einen moderaten, langsamen Ausschlag.</p>
+            </div>
+
+            <div class="info-section">
+              <h3>3 · Leckage / Rohrbruch</h3>
+              <p>Bei t = 3 s bricht ein Rohr. Beide Drücke fallen schlagartig (τ = 0.05 s) auf nahezu 0 bar ab. dp/dt zeigt einen extremen Spike (&gt; 3 bar/s) – das ist der physikalische Fingerabdruck, der die Leckage sofort von einem Tray-Einbau unterscheidet.</p>
+            </div>
+
+            <div class="info-section">
+              <h3>Erkennung</h3>
+              <p>Der Belimo dp-Sensor misst Δp = p1 − p2 kontinuierlich. Die Ableitung dp/dt wird in Echtzeit berechnet. Ein Schwellenwert von |dp/dt| &gt; 3 bar/s löst den Leckage-Alarm aus. Ein Tray-Einbau erzeugt typisch |dp/dt| &lt; 0.5 bar/s – zuverlässig unterscheidbar.</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="right-col">
+        <div id="status-bar" class="status-bar status-ok">System Normal – Bereit</div>
+
+        <div class="panel" style="margin-bottom:12px">
+          <h2>R&amp;I Fließschema – Belimo Energy Valve™ + Server Rack</h2>
+          <div id="schematic-container"></div>
+        </div>
+
+        <div class="panel" style="margin-bottom:12px">
+          <h2>Absoluter Druck (p1 &amp; p2)</h2>
+          <canvas id="chartPressure"></canvas>
+        </div>
+        <div class="panel">
+          <h2>Änderungsrate dp/dt – Physikalischer Fingerabdruck</h2>
+          <canvas id="chartDerivative"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const sim = {
+        running: false,
+        scenario: "normal",
+        time: 0,
+        intervalId: null,
+        p1: 0, p2: 0,
+        activeTrays: 0,
+        leaking: false,
+        alarmTriggered: false,
+        data: { time: [], p1: [], p2: [], dp1dt: [], dp2dt: [] }
+      };
+
+      let chartPressure, chartDerivative;
+
+      /* ── Tabs ── */
+      function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach((b, i) => {
+          b.classList.toggle('active', (tab === 'params' ? i === 0 : i === 1));
+        });
+        document.getElementById('tab-params').classList.toggle('active', tab === 'params');
+        document.getElementById('tab-info').classList.toggle('active', tab === 'info');
+      }
+
+      /* ── Computed dp readout ── */
+      function getDpRack(n) {
+        const dpOff = parseFloat(document.getElementById("inp-dp-offset").value) || 0;
+        const dpPer = parseFloat(document.getElementById("inp-dp-per-tray").value) || 0;
+        return dpOff + dpPer * n;
+      }
+
+      function updateComputedDp() {
+        const p1 = parseFloat(document.getElementById("inp-p1-sys").value) || 0;
+        const dpOff = parseFloat(document.getElementById("inp-dp-offset").value) || 0;
+        const dpPer = parseFloat(document.getElementById("inp-dp-per-tray").value) || 0;
+        const n = parseInt(document.getElementById("inp-trays").value) || 0;
+        const dp = dpOff + dpPer * n;
+        const p2 = p1 - dp;
+        const el = document.getElementById("computed-dp");
+        el.innerHTML =
+          `dp<sub>Rack</sub> = ${dpOff} + ${dpPer} × ${n} = <strong>${dp.toFixed(3)} bar</strong><br>` +
+          `p2 = ${p1} − ${dp.toFixed(3)} = <strong>${p2.toFixed(3)} bar</strong>`;
+      }
+
+      /* ── Charts ── */
+      function initCharts() {
+        const sharedOpts = {
+          responsive: true,
+          maintainAspectRatio: false,
+          elements: { point: { radius: 0 } },
+          animation: { duration: 0 }
+        };
+
+        chartPressure = new Chart(document.getElementById("chartPressure"), {
+          type: "line",
+          data: { labels: [], datasets: [] },
+          options: {
+            ...sharedOpts,
+            scales: {
+              y: { beginAtZero: true, title: { display: true, text: "Druck (bar)" } },
+              x: { title: { display: true, text: "Zeit (s)" } }
+            }
+          }
+        });
+
+        chartDerivative = new Chart(document.getElementById("chartDerivative"), {
+          type: "line",
+          data: { labels: [], datasets: [] },
+          options: {
+            ...sharedOpts,
+            scales: {
+              y: { title: { display: true, text: "dp/dt (bar/s)" } },
+              x: { title: { display: true, text: "Zeit (s)" } }
+            }
+          }
+        });
+      }
+
+      function pushCharts() {
+        const d = sim.data;
+        chartPressure.data.labels = d.time;
+        chartPressure.data.datasets = [
+          { label: "p1 (Vor Rack)", data: d.p1, borderColor: "#e67e22", borderWidth: 2, tension: .1 },
+          { label: "p2 (Nach Rack)", data: d.p2, borderColor: "#3498db", borderWidth: 2, tension: .1 }
+        ];
+        chartPressure.update("none");
+
+        chartDerivative.data.labels = d.time;
+        chartDerivative.data.datasets = [
+          { label: "dp1/dt", data: d.dp1dt, borderColor: "#e67e22", borderWidth: 2, tension: .1 },
+          { label: "dp2/dt", data: d.dp2dt, borderColor: "#2980b9", borderWidth: 2, tension: .1 }
+        ];
+        chartDerivative.update("none");
+      }
+
+      /* ── Combined Schematic ── */
+      function renderSchematic() {
+        const container = document.getElementById("schematic-container");
+        const baseTrays = parseInt(document.getElementById("inp-trays").value) || 10;
+        const numActive = (sim.running || sim.time > 0) ? sim.activeTrays : baseTrays;
+        const totalSlots = Math.max(numActive, baseTrays) + (sim.scenario === "add_tray" ? 1 : 0);
+
+        const trayH = 26;
+        const traySpacing = trayH + 2;
+        const rackContentH = totalSlots * traySpacing + 10;
+
+        const LX = 40;
+        const pipeTop = 60;
+        const riserL = 460;
+        const riserR = 660;
+        const rackTop = pipeTop + 40;
+        const rackBot = rackTop + rackContentH;
+        const pipeBot = rackBot + 60;
+        const svgW = 780;
+        const svgH = pipeBot + 70;
+        const trayX = riserL + 20;
+        const trayW = riserR - riserL - 40;
+        const leakSlot = Math.floor(baseTrays / 2);
+        const PC = "#1a1a2e";  // pipe color (uniform, like real P&ID)
+
+        let s = `<svg viewBox="0 0 ${svgW} ${svgH}">`;
+
+        s += `<defs>`;
+        s += `<marker id="arr-o" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#e67e22"/></marker>`;
+        s += `</defs>`;
+
+        // ─── Vorlauf (supply, top) ───
+        s += `<text x="${LX}" y="${pipeTop - 12}" font-size="12" font-weight="700" fill="${PC}">Vorlauf</text>`;
+        s += `<line x1="${LX}" y1="${pipeTop}" x2="${riserL}" y2="${pipeTop}" stroke="${PC}" stroke-width="3"/>`;
+        s += `<polygon points="${LX + 12},${pipeTop - 5} ${LX + 22},${pipeTop} ${LX + 12},${pipeTop + 5}" fill="${PC}"/>`;
+
+        // ─── Rücklauf (return, bottom) ───
+        s += `<text x="${LX}" y="${pipeBot - 12}" font-size="12" font-weight="700" fill="${PC}">Rücklauf</text>`;
+        s += `<line x1="${LX}" y1="${pipeBot}" x2="${riserR}" y2="${pipeBot}" stroke="${PC}" stroke-width="3"/>`;
+        s += `<polygon points="${LX + 22},${pipeBot - 5} ${LX + 12},${pipeBot} ${LX + 22},${pipeBot + 5}" fill="${PC}"/>`;
+
+        // ─── T1 sensor (on Vorlauf) ───
+        const t1x = 230;
+        s += `<line x1="${t1x}" y1="${pipeTop}" x2="${t1x}" y2="${pipeTop - 26}" stroke="${PC}" stroke-width="2"/>`;
+        s += `<circle cx="${t1x}" cy="${pipeTop - 36}" r="14" fill="white" stroke="${PC}" stroke-width="2"/>`;
+        s += `<text x="${t1x}" y="${pipeTop - 32}" font-size="11" text-anchor="middle" fill="${PC}">T₁</text>`;
+
+        // ─── dp sensor (on Vorlauf) ───
+        const dpx = 290;
+        s += `<line x1="${dpx}" y1="${pipeTop}" x2="${dpx}" y2="${pipeTop - 26}" stroke="${PC}" stroke-width="2"/>`;
+        s += `<circle cx="${dpx}" cy="${pipeTop - 36}" r="14" fill="white" stroke="${PC}" stroke-width="2"/>`;
+        s += `<text x="${dpx}" y="${pipeTop - 32}" font-size="11" text-anchor="middle" fill="${PC}">dp</text>`;
+
+        // ─── p1 sensor (on Vorlauf, before rack) ───
+        const p1x = 350;
+        s += `<circle cx="${p1x}" cy="${pipeTop}" r="12" fill="white" stroke="#e67e22" stroke-width="2.5"/>`;
+        s += `<text x="${p1x}" y="${pipeTop + 4}" font-size="10" text-anchor="middle" fill="#e67e22" font-weight="700">p1</text>`;
+
+        // ─── Supply riser (left, Vorlauf → rack top) ───
+        s += `<line x1="${riserL}" y1="${pipeTop}" x2="${riserL}" y2="${rackBot + 4}" stroke="${PC}" stroke-width="3"/>`;
+        s += `<polygon points="${riserL - 4},${rackTop - 8} ${riserL},${rackTop} ${riserL + 4},${rackTop - 8}" fill="${PC}"/>`;
+
+        // ─── Return riser (right, rack bottom → Rücklauf) ───
+        s += `<line x1="${riserR}" y1="${rackTop - 4}" x2="${riserR}" y2="${pipeBot}" stroke="${PC}" stroke-width="3"/>`;
+        s += `<polygon points="${riserR - 4},${rackBot + 8} ${riserR},${rackBot + 16} ${riserR + 4},${rackBot + 8}" fill="${PC}"/>`;
+
+        // ─── p2 sensor (on Rücklauf, after rack, before valve) ───
+        const p2x = 340;
+        s += `<circle cx="${p2x}" cy="${pipeBot}" r="12" fill="white" stroke="#e67e22" stroke-width="2.5"/>`;
+        s += `<text x="${p2x}" y="${pipeBot + 4}" font-size="10" text-anchor="middle" fill="#e67e22" font-weight="700">p2</text>`;
+
+        // ─── Rack enclosure ───
+        s += `<rect x="${riserL - 10}" y="${rackTop - 6}" width="${riserR - riserL + 20}" height="${rackBot - rackTop + 12}" fill="none" stroke="#2c3e50" stroke-width="2" stroke-dasharray="8,4" rx="6"/>`;
+        s += `<text x="${(riserL + riserR) / 2}" y="${rackTop - 14}" font-size="11" text-anchor="middle" fill="#2c3e50" font-weight="700">Server Rack · Anlagenabschnitt</text>`;
+
+        // ─── Trays ───
+        for (let i = 0; i < totalSlots; i++) {
+          const slotIdx = i;
+          const y = rackTop + 8 + i * traySpacing;
+          const midY = y + trayH / 2;
+
+          const isActive = slotIdx < numActive;
+          const isNewTray = sim.scenario === "add_tray" && slotIdx >= baseTrays && sim.time >= 3;
+          const isLeakTray = sim.leaking && slotIdx === leakSlot;
+
+          if (!isActive) {
+            s += `<rect x="${trayX}" y="${y}" width="${trayW}" height="${trayH}" fill="none" stroke="#bbb" stroke-width="1" stroke-dasharray="5,4" rx="3"/>`;
+            s += `<text x="${trayX + trayW / 2}" y="${midY + 4}" font-size="9" text-anchor="middle" fill="#bbb">leer</text>`;
+            continue;
+          }
+
+          let pipeColor = "#888";
+          if (isLeakTray) pipeColor = "#e74c3c";
+          else if (isNewTray) pipeColor = "#e67e22";
+
+          s += `<line x1="${riserL}" y1="${midY}" x2="${trayX}" y2="${midY}" stroke="${pipeColor}" stroke-width="1.5"/>`;
+          s += `<line x1="${trayX + trayW}" y1="${midY}" x2="${riserR}" y2="${midY}" stroke="${pipeColor}" stroke-width="1.5"/>`;
+
+          const arX = trayX - 10;
+          s += `<polygon points="${arX},${midY - 3} ${arX + 6},${midY} ${arX},${midY + 3}" fill="${pipeColor}"/>`;
+
+          let bg = "#edf2f7", border = "#5a7da5", textColor = "#2c3e50";
+          if (isLeakTray) { bg = "#fdedec"; border = "#e74c3c"; textColor = "#922b21"; }
+          else if (isNewTray) { bg = "#fef5e7"; border = "#e67e22"; textColor = "#935116"; }
+
+          s += `<rect x="${trayX}" y="${y}" width="${trayW}" height="${trayH}" fill="${bg}" stroke="${border}" stroke-width="1.5" rx="3"/>`;
+          s += `<text x="${trayX + 8}" y="${midY + 4}" font-size="10" fill="${textColor}" font-weight="600">Tray ${slotIdx + 1}</text>`;
+
+          s += `<circle cx="${trayX}" cy="${midY}" r="3" fill="white" stroke="${border}" stroke-width="1.5"/>`;
+          s += `<circle cx="${trayX + trayW}" cy="${midY}" r="3" fill="white" stroke="${border}" stroke-width="1.5"/>`;
+
+          if (isLeakTray) {
+            s += `<text x="${trayX + trayW / 2 + 30}" y="${midY + 4}" font-size="9" fill="#e74c3c" font-weight="700">LECK</text>`;
+          }
+          if (isNewTray) {
+            s += `<text x="${trayX + trayW / 2 + 30}" y="${midY + 4}" font-size="9" fill="#e67e22" font-weight="700">NEU</text>`;
+          }
+        }
+
+        // ─── dp = konstant arrow (between p1 and p2) ───
+        const annX = p1x + 20;
+        const annY1 = pipeTop + 16;
+        const annY2 = pipeBot - 16;
+        s += `<line x1="${annX}" y1="${annY2}" x2="${annX}" y2="${annY1}" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr-o)"/>`;
+        s += `<line x1="${annX}" y1="${annY1}" x2="${annX}" y2="${annY2}" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr-o)"/>`;
+        s += `<text x="${annX + 8}" y="${(annY1 + annY2) / 2 - 4}" font-size="10" fill="#e67e22" font-weight="600">dp =</text>`;
+        s += `<text x="${annX + 8}" y="${(annY1 + annY2) / 2 + 8}" font-size="10" fill="#e67e22" font-weight="600">konstant</text>`;
+
+        // ─── Belimo Energy Valve on Rücklauf ───
+        const vx = 190;
+        s += `<polygon points="${vx},${pipeBot - 12} ${vx},${pipeBot + 12} ${vx + 28},${pipeBot - 12} ${vx + 28},${pipeBot + 12}" fill="#bdc3c7" stroke="#2c3e50" stroke-width="2"/>`;
+
+        // M actuator (below, with spacing)
+        const mx = 135;
+        s += `<line x1="${mx}" y1="${pipeBot}" x2="${mx}" y2="${pipeBot + 22}" stroke="${PC}" stroke-width="2"/>`;
+        s += `<circle cx="${mx}" cy="${pipeBot + 35}" r="13" fill="white" stroke="${PC}" stroke-width="2"/>`;
+        s += `<text x="${mx}" y="${pipeBot + 39}" font-size="11" text-anchor="middle" font-weight="700" fill="${PC}">M</text>`;
+
+        // V body (below)
+        const vbx = 170;
+        s += `<line x1="${vbx}" y1="${pipeBot}" x2="${vbx}" y2="${pipeBot + 22}" stroke="${PC}" stroke-width="2"/>`;
+        s += `<circle cx="${vbx}" cy="${pipeBot + 35}" r="13" fill="white" stroke="${PC}" stroke-width="2"/>`;
+        s += `<text x="${vbx}" y="${pipeBot + 39}" font-size="11" text-anchor="middle" font-weight="700" fill="${PC}">V</text>`;
+
+        // T2 sensor (below, spaced right of valve)
+        const t2x = 250;
+        s += `<line x1="${t2x}" y1="${pipeBot}" x2="${t2x}" y2="${pipeBot + 22}" stroke="${PC}" stroke-width="2"/>`;
+        s += `<circle cx="${t2x}" cy="${pipeBot + 35}" r="13" fill="white" stroke="${PC}" stroke-width="2"/>`;
+        s += `<text x="${t2x}" y="${pipeBot + 39}" font-size="11" text-anchor="middle" fill="${PC}">T₂</text>`;
+
+        // Belimo label (below valve, clear of circles)
+        s += `<text x="${vx - 15}" y="${pipeBot + 60}" font-size="9" fill="#555" font-style="italic">Belimo Energy Valve™</text>`;
+
+        // Differenzdruckregelung dashed control line
+        s += `<line x1="${dpx}" y1="${pipeTop - 22}" x2="${dpx}" y2="${pipeTop + 25}" stroke="#e67e22" stroke-width="1.2" stroke-dasharray="5,4"/>`;
+        s += `<line x1="${dpx}" y1="${pipeTop + 25}" x2="${vx + 14}" y2="${pipeBot - 14}" stroke="#e67e22" stroke-width="1.2" stroke-dasharray="5,4"/>`;
+        s += `<text x="${LX + 100}" y="${(pipeTop + pipeBot) / 2}" font-size="9" fill="#e67e22">Differenzdruck-</text>`;
+        s += `<text x="${LX + 100}" y="${(pipeTop + pipeBot) / 2 + 11}" font-size="9" fill="#e67e22">regelung</text>`;
+
+        // ─── Live readouts ───
+        if (sim.data.p1.length > 0) {
+          const p1v = sim.data.p1.at(-1);
+          const p2v = sim.data.p2.at(-1);
+          const dp = p1v - p2v;
+
+          // p1 value next to p1 circle
+          s += `<text x="${p1x}" y="${pipeTop - 18}" font-size="10" text-anchor="middle" fill="#e67e22" font-weight="700">${p1v.toFixed(3)} bar</text>`;
+
+          // p2 value next to p2 circle
+          s += `<text x="${p2x}" y="${pipeBot - 18}" font-size="10" text-anchor="middle" fill="#e67e22" font-weight="700">${p2v.toFixed(3)} bar</text>`;
+
+          // Δp readout between risers near bottom of rack
+          s += `<rect x="${(riserL + riserR) / 2 - 55}" y="${rackBot + 16}" width="110" height="20" fill="white" stroke="#e67e22" stroke-width="1" rx="4" opacity=".92"/>`;
+          s += `<text x="${(riserL + riserR) / 2}" y="${rackBot + 30}" font-size="10" text-anchor="middle" fill="#e67e22" font-weight="700">Δp = ${dp.toFixed(3)} bar</text>`;
+        }
+
+        s += `</svg>`;
+        container.innerHTML = s;
+      }
+
+      /* ── Scenario selection ── */
+      function selectScenario(sc) {
+        sim.scenario = sc;
+        document.querySelectorAll(".scenario-btn").forEach(b => {
+          const s = b.dataset.scenario;
+          b.className = "scenario-btn" + (s === sc ? (" sel-" + ({normal:"normal",add_tray:"add",leak:"leak"}[s])) : "");
+        });
+        resetSim();
+      }
+
+      /* ── Simulation control ── */
+      function toggleSim() {
+        sim.running ? stopSim() : startSim();
+      }
+
+      function startSim() {
+        if (sim.time >= 6) resetSim();
+        sim.running = true;
+        sim.intervalId = setInterval(simStep, 50);
+        updateToggleBtn();
+      }
+
+      function stopSim() {
+        sim.running = false;
+        clearInterval(sim.intervalId);
+        updateToggleBtn();
+      }
+
+      function resetSim() {
+        stopSim();
+        const p1Sys = parseFloat(document.getElementById("inp-p1-sys").value);
+        const trays = parseInt(document.getElementById("inp-trays").value);
+        const dpRack = getDpRack(trays);
+
+        sim.time = 0;
+        sim.p1 = p1Sys;
+        sim.p2 = p1Sys - dpRack;
+        sim.activeTrays = trays;
+        sim.leaking = false;
+        sim.alarmTriggered = false;
+        sim.data = { time: [], p1: [], p2: [], dp1dt: [], dp2dt: [] };
+
+        pushCharts();
+        renderSchematic();
+        updateTimeUI();
+        setStatus("ok", "System Normal – Bereit");
+      }
+
+      function updateToggleBtn() {
+        const btn = document.getElementById("btn-toggle");
+        if (sim.running) {
+          btn.textContent = "■ Stop";
+          btn.className = "btn-stop";
+        } else {
+          btn.textContent = "▶ Start";
+          btn.className = "btn-start";
+        }
+      }
+
+      function updateTimeUI() {
+        document.getElementById("time-display").textContent = sim.time.toFixed(2);
+        document.getElementById("progress-fill").style.width = (sim.time / 6 * 100) + "%";
+      }
+
+      function setStatus(level, msg) {
+        const el = document.getElementById("status-bar");
+        el.className = "status-bar status-" + level;
+        el.textContent = msg;
+      }
+
+      /* ── Physics step ── */
+      function simStep() {
+        const dt = 0.05;
+        if (sim.time > 6) { stopSim(); return; }
+
+        const p1Sys = parseFloat(document.getElementById("inp-p1-sys").value);
+        const p1Leak = parseFloat(document.getElementById("inp-p1-leak").value);
+        const p2Leak = parseFloat(document.getElementById("inp-p2-leak").value);
+        const baseTrays = parseInt(document.getElementById("inp-trays").value);
+
+        const dpBase = getDpRack(baseTrays);
+        const p2Sys = p1Sys - dpBase;
+
+        let tgt1 = p1Sys, tgt2 = p2Sys, tau = 0.1;
+
+        if (sim.time >= 3) {
+          if (sim.scenario === "add_tray") {
+            sim.activeTrays = baseTrays + 1;
+            const dpNew = getDpRack(baseTrays + 1);
+            tgt1 = p1Sys;
+            tgt2 = p1Sys - dpNew;
+            tau = parseFloat(document.getElementById("inp-tau-tray").value) || 1.0;
+          } else if (sim.scenario === "leak") {
+            tgt1 = p1Leak;
+            tgt2 = p2Leak;
+            tau = parseFloat(document.getElementById("inp-tau-leak").value) || 0.05;
+            sim.leaking = true;
+          }
+        } else {
+          sim.activeTrays = baseTrays;
+          sim.leaking = false;
+        }
+
+        sim.p1 += (tgt1 - sim.p1) * (dt / tau);
+        sim.p2 += (tgt2 - sim.p2) * (dt / tau);
+
+        const noise = () => (Math.random() - .5) * .02;
+        const v1 = sim.p1 + noise();
+        const v2 = sim.p2 + noise();
+
+        sim.data.time.push(sim.time.toFixed(2));
+        sim.data.p1.push(v1);
+        sim.data.p2.push(v2);
+
+        const n = sim.data.p1.length;
+        if (n > 1) {
+          sim.data.dp1dt.push((sim.data.p1[n - 1] - sim.data.p1[n - 2]) / dt);
+          sim.data.dp2dt.push((sim.data.p2[n - 1] - sim.data.p2[n - 2]) / dt);
+        } else {
+          sim.data.dp1dt.push(0);
+          sim.data.dp2dt.push(0);
+        }
+
+        if (!sim.alarmTriggered && n > 2) {
+          const threshold = parseFloat(document.getElementById("inp-alarm-threshold").value) || 3.0;
+          const rate = Math.abs(sim.data.dp1dt[n - 1]);
+          if (rate > threshold) {
+            sim.alarmTriggered = true;
+            setStatus("alarm", `LECKAGE ERKANNT – |dp/dt| = ${rate.toFixed(1)} bar/s > ${threshold} bar/s`);
+          }
+        }
+
+        if (!sim.alarmTriggered) {
+          if (sim.scenario === "add_tray" && sim.time >= 3) {
+            setStatus("warn", "Tray wird eingebaut – Druckänderung erwartet");
+          } else {
+            setStatus("ok", "System Normal – Simulation läuft");
+          }
+        }
+
+        sim.time += dt;
+        updateTimeUI();
+
+        if (n % 3 === 0 || sim.time > 6) {
+          pushCharts();
+          renderSchematic();
+        }
+
+        if (sim.time > 6) stopSim();
+      }
+
+      /* ── Init ── */
+      window.onload = () => {
+        initCharts();
+        updateComputedDp();
+        resetSim();
+      };
+    </script>
+  </body>
+</html>
